@@ -1,6 +1,10 @@
 #include "renderer.hpp"
 #include "views.hpp"
+#ifdef __APPLE__
+#include "glut_glfw.hpp"
+#else
 #include <GL/freeglut.h>
+#endif
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
