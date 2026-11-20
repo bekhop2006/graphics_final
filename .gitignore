@@ -1,0 +1,11 @@
+# Build outputs
+*.o
+*.d
+astana3d
+astana3d.exe
+
+# Capture output
+capture/
+frames/
+
+.DS_Store
