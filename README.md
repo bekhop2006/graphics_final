@@ -30,7 +30,7 @@ The program requires a graphics driver with an OpenGL 3.3 core context. The GLSL
 | --- | --- |
 | 0 / R | Fly to the overview / reset the scene and camera to the night overview |
 | 1 | Baiterek |
-| 2 | Akorda |
+| 2 / K | Akorda |
 | 3 | Khan Shatyr |
 | 4 | Palace of Peace and Reconciliation |
 | 5 | Golden Towers |
@@ -40,7 +40,8 @@ The program requires a graphics driver with an OpenGL 3.3 core context. The GLSL
 | C | Inspect the fastback, SUV, taxi and compact car in order. Drag to orbit the current car. |
 | Left click | Select the visible building. Click the sky or ground to clear the selection. |
 | Left drag / mouse wheel | Orbit around the target / zoom |
-| W, A, S, D / Q, E | Move forward, left, back, right / move down, up |
+| W, A, S, D / Q, E or Space / Shift | Hold to move forward, left, back, right / down, up / faster |
+| V | Free camera: mouse look, W/A/S/D fly, Space or E up, Q down, Shift faster, click selects the building under the crosshair, V or Esc exits |
 | N / T | Change between night and day / start or stop the 20-second cycle |
 | G / J / F | Toggle wireframe / 2×2 supersampling / distance fog |
 | Esc | Close the program |
