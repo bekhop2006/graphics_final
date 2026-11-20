@@ -47,7 +47,17 @@ void title() {
     for(const auto& l:landmarks()) if(l.id==state.selected) s<<"  |  "<<l.name;
     glutSetWindowTitle(s.str().c_str());
 }
-void display() { renderer.render(state); glutSwapBuffers(); }
+void crosshair() {
+    // Two scissored clears draw the aiming mark without another shader.
+    GLfloat old[4]; glGetFloatv(GL_COLOR_CLEAR_VALUE,old);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER,0); glViewport(0,0,winW,winH);
+    glEnable(GL_SCISSOR_TEST); glClearColor(1,1,1,.9f);
+    const int cx=winW/2, cy=winH/2, len=std::max(6,winH/90), thick=std::max(2,winH/400);
+    glScissor(cx-len,cy-thick/2,2*len,thick); glClear(GL_COLOR_BUFFER_BIT);
+    glScissor(cx-thick/2,cy-len,thick,2*len); glClear(GL_COLOR_BUFFER_BIT);
+    glDisable(GL_SCISSOR_TEST); glClearColor(old[0],old[1],old[2],old[3]);
+}
+void display() { renderer.render(state); if(freeCam) crosshair(); glutSwapBuffers(); }
 void resize(int w,int h) { winW=w; winH=h; renderer.resize(w,h); glutPostRedisplay(); }
 Vec3 freeDirection() { return {std::cos(pitch)*std::sin(yaw),std::sin(pitch),std::cos(pitch)*std::cos(yaw)}; }
 void aimFree() { state.cam.target=state.cam.eye+freeDirection()*10; }
