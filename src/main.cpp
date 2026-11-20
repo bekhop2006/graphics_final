@@ -5,6 +5,7 @@
 #else
 #include <GL/freeglut.h>
 #endif
+#include <cctype>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -31,17 +32,42 @@ bool cycle=false, pressed=false, dragged=false, closing=false;
 int lastX=0,lastY=0, downX=0,downY=0,previousMs=0;
 int activeCar=-1;
 float cycleTime=0;
+// Free camera: mouse look plus held-key flight through the whole map.
+bool freeCam=false, boost=false, held[256]={};
+float yaw=0, pitch=0;
+int winW=1080, winH=640;
 
 void title() {
     std::ostringstream s;
     s<<"Astana Night 3D  |  1-7 landmarks   0 overview   B boulevard   C cars   N day/night   "
-      <<"G wire   J AA   F fog";
+      <<"G wire   J AA   F fog   A Akorda   V free cam";
+    if(freeCam) s.str("Astana Night 3D  |  FREE CAM: WASD move   mouse look   Space/E up   Q down   "
+                      "Shift fast   click select   V/Esc exit");
     if(activeCar>=0) s<<"  |  "<<carSpots()[activeCar].name;
     for(const auto& l:landmarks()) if(l.id==state.selected) s<<"  |  "<<l.name;
     glutSetWindowTitle(s.str().c_str());
 }
 void display() { renderer.render(state); glutSwapBuffers(); }
-void resize(int w,int h) { renderer.resize(w,h); glutPostRedisplay(); }
+void resize(int w,int h) { winW=w; winH=h; renderer.resize(w,h); glutPostRedisplay(); }
+Vec3 freeDirection() { return {std::cos(pitch)*std::sin(yaw),std::sin(pitch),std::cos(pitch)*std::cos(yaw)}; }
+void aimFree() { state.cam.target=state.cam.eye+freeDirection()*10; }
+void setFreeCam(bool on) {
+    if(on==freeCam) return;
+    freeCam=on; boost=false; pressed=false; std::fill(held,held+256,false);
+    glutIgnoreKeyRepeat(on); glutSetCursor(on?GLUT_CURSOR_NONE:GLUT_CURSOR_INHERIT);
+    if(!on) return;
+    flightTime=1; activeCar=-1;
+    const Vec3 d=unit(state.cam.target-state.cam.eye);
+    yaw=std::atan2(d.x,d.z); pitch=std::asin(clamp(d.y,-1,1));
+    state.cam.verticalFov=60*pi/180; aimFree();
+    glutWarpPointer(winW/2,winH/2);
+}
+void look(int x,int y) {
+    const int cx=winW/2, cy=winH/2;
+    if(x==cx && y==cy) return;
+    yaw-=(x-cx)*.002f; pitch=clamp(pitch-(y-cy)*.002f,-1.55f,1.55f);
+    aimFree(); glutWarpPointer(cx,cy); glutPostRedisplay();
+}
 void beginFlight(Camera target) {
     flightFrom=state.cam; flightTo=target; flightTime=0;
 }
@@ -53,6 +79,15 @@ void timer(int) {
     if(flightTime<1) {
         flightTime=std::min(1.f,flightTime+dt/1.35f);
         state.cam=fly(flightFrom,flightTo,flightTime);
+    }
+    if(freeCam) {
+        const Vec3 f=freeDirection(), r=unit(cross(f,{0,1,0}));
+        const Vec3 v=f*(float(held['w'])-held['s'])+r*(float(held['d'])-held['a'])
+                    +Vec3{0,float(held[' '] || held['e'])-held['q'],0};
+        if(length(v)>0) {
+            state.cam.eye=state.cam.eye+unit(v)*((boost?60.f:18.f)*dt);
+            state.cam.eye.y=std::max(.5f,state.cam.eye.y); aimFree();
+        }
     }
     if(cycle) {
         cycleTime+=dt;
@@ -92,6 +127,14 @@ void move(float forward,float right,float vertical) {
     state.cam.eye=state.cam.eye+offset; state.cam.target=state.cam.target+offset;
 }
 void key(unsigned char c,int,int) {
+    const unsigned char k=static_cast<unsigned char>(std::tolower(c));
+    if(k=='v') { setFreeCam(!freeCam); title(); glutPostRedisplay(); return; }
+    if(freeCam) {
+        if(c==27) { setFreeCam(false); title(); return; }
+        if(k==' ' || std::strchr("wasdqe",k)) { held[k]=true; return; }
+        if((c>='0' && c<='7') || k=='b' || k=='c' || k=='r') setFreeCam(false);
+    }
+    if(k=='a') { activeCar=-1; beginFlight(focus(2)); title(); return; }
     if(c>='1' && c<='7') { activeCar=-1; beginFlight(focus(c-'0')); title(); return; }
     switch(c) {
         case '0': activeCar=-1; beginFlight(overview()); break;
@@ -118,7 +161,6 @@ void key(unsigned char c,int,int) {
         case 'f': case 'F': state.fog=state.fog>0?0:.85f; break;
         case 'w': case 'W': move(2,0,0); break;
         case 's': case 'S': move(-2,0,0); break;
-        case 'a': case 'A': move(0,-2,0); break;
         case 'd': case 'D': move(0,2,0); break;
         case 'q': case 'Q': move(0,0,-2); break;
         case 'e': case 'E': move(0,0,2); break;
@@ -128,8 +170,15 @@ void key(unsigned char c,int,int) {
     }
     title(); glutPostRedisplay();
 }
+void keyUp(unsigned char c,int,int) { held[std::tolower(c)]=false; }
+void special(int k,int,int) { if(k==GLUT_KEY_SHIFT_L || k==GLUT_KEY_SHIFT_R) boost=true; }
+void specialUp(int k,int,int) { if(k==GLUT_KEY_SHIFT_L || k==GLUT_KEY_SHIFT_R) boost=false; }
 void mouse(int button,int action,int x,int y) {
     if(button!=GLUT_LEFT_BUTTON) return;
+    if(freeCam) {
+        if(action==GLUT_DOWN) { state.selected=renderer.pick(state,winW/2,winH/2); title(); glutPostRedisplay(); }
+        return;
+    }
     if(action==GLUT_DOWN) {
         pressed=true; dragged=false; downX=lastX=x; downY=lastY=y;
     } else if(pressed) {
@@ -138,11 +187,14 @@ void mouse(int button,int action,int x,int y) {
     }
 }
 void motion(int x,int y) {
+    if(freeCam) { look(x,y); return; }
     if(!pressed) return;
     if(!dragged && std::abs(x-downX)+std::abs(y-downY)<4) return;
     dragged=true; orbit(float(x-lastX),float(y-lastY)); lastX=x; lastY=y; glutPostRedisplay();
 }
+void passive(int x,int y) { if(freeCam) look(x,y); }
 void wheel(int,int direction,int,int) {
+    if(freeCam) return;
     flightTime=1;
     const Vec3 offset=state.cam.eye-state.cam.target;
     const Vec3 lookBack=unit(offset);
@@ -267,7 +319,7 @@ int main(int argc,char** argv) {
             std::cout<<"Astana Night 3D\nUsage: astana3d [--shots DIR | --tour DIR] "
                        "[--width W --height H --fps N --first FRAME --last FRAME]\n"
                        "1-7 landmarks, 0 overview, B boulevard, C next car, N day/night, T cycle, G wireframe, "
-                       "J antialiasing, F fog, WASD move, Q/E down/up, drag orbit, click pick, "
+                       "J antialiasing, F fog, A Akorda, V free camera, WSD move, Q/E down/up, drag orbit, click pick, "
                        "wheel zoom, R reset, Esc exit.\n";
             return 0;
         }
@@ -295,7 +347,8 @@ int main(int argc,char** argv) {
         state.cam=overview(); title(); previousMs=glutGet(GLUT_ELAPSED_TIME);
         glutDisplayFunc(display); glutReshapeFunc(resize); glutKeyboardFunc(key);
         glutCloseFunc(closeWindow);
-        glutMouseFunc(mouse); glutMotionFunc(motion); glutMouseWheelFunc(wheel);
+        glutKeyboardUpFunc(keyUp); glutSpecialFunc(special); glutSpecialUpFunc(specialUp);
+        glutMouseFunc(mouse); glutMotionFunc(motion); glutPassiveMotionFunc(passive); glutMouseWheelFunc(wheel);
         glutTimerFunc(16,timer,0); glutMainLoop();
         // Freeglut may destroy the window before returning from its event loop.
         // The final context teardown also releases all remaining GPU resources.
