@@ -5,6 +5,11 @@ TARGET = astana3d
 ifeq ($(OS),Windows_NT)
     TARGET := $(TARGET).exe
     LDLIBS = -lfreeglut -lglew32 -lopengl32
+else ifeq ($(shell uname -s),Darwin)
+    BREW := $(shell brew --prefix)
+    CPPFLAGS += -I$(BREW)/include -DGL_SILENCE_DEPRECATION
+    LDFLAGS += -L$(BREW)/lib
+    LDLIBS = -lglfw -lGLEW -framework OpenGL
 else
     LDLIBS = -lglut -lGLEW -lGL
 endif
