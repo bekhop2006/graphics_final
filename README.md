@@ -18,6 +18,12 @@ Extract the whole archive. For the example below, select `C:\CG` as the extracti
 
 The program requires a graphics driver with an OpenGL 3.3 core context. The GLSL shaders are embedded in the C++ source. The screenshots are examples, and the program does not load them.
 
+## Build and run on macOS
+
+1. `brew install glfw glew` installs the window library and the OpenGL loader.
+2. `make` compiles the project. On macOS, `src/glut_glfw.hpp` provides the freeglut calls on top of GLFW, because XQuartz freeglut cannot create an OpenGL 3.3 core context.
+3. `./astana3d` opens the live model.
+
 ## Controls
 
 | Input | Action |
