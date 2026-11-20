@@ -40,7 +40,7 @@ int winW=1080, winH=640;
 void title() {
     std::ostringstream s;
     s<<"Astana Night 3D  |  1-7 landmarks   0 overview   B boulevard   C cars   N day/night   "
-      <<"G wire   J AA   F fog   A Akorda   V free cam";
+      <<"G wire   J AA   F fog   K Akorda   V free cam";
     if(freeCam) s.str("Astana Night 3D  |  FREE CAM: WASD move   mouse look   Space/E up   Q down   "
                       "Shift fast   click select   V/Esc exit");
     if(activeCar>=0) s<<"  |  "<<carSpots()[activeCar].name;
@@ -64,7 +64,7 @@ void aimFree() { state.cam.target=state.cam.eye+freeDirection()*10; }
 void setFreeCam(bool on) {
     if(on==freeCam) return;
     freeCam=on; boost=false; pressed=false; std::fill(held,held+256,false);
-    glutIgnoreKeyRepeat(on); glutSetCursor(on?GLUT_CURSOR_NONE:GLUT_CURSOR_INHERIT);
+    glutSetCursor(on?GLUT_CURSOR_NONE:GLUT_CURSOR_INHERIT);
     if(!on) return;
     flightTime=1; activeCar=-1;
     const Vec3 d=unit(state.cam.target-state.cam.eye);
@@ -81,6 +81,7 @@ void look(int x,int y) {
 void beginFlight(Camera target) {
     flightFrom=state.cam; flightTo=target; flightTime=0;
 }
+void move(float forward,float right,float vertical);
 void timer(int) {
     if(closing || glutGetWindow()==0) return;
     const int now=glutGet(GLUT_ELAPSED_TIME);
@@ -90,15 +91,18 @@ void timer(int) {
         flightTime=std::min(1.f,flightTime+dt/1.35f);
         state.cam=fly(flightFrom,flightTo,flightTime);
     }
+    // Held keys move continuously; macOS does not auto-repeat held letter keys.
+    const float forward=float(held['w'])-held['s'], right=float(held['d'])-held['a'];
+    const float up=float(held[' '] || held['e'])-held['q'];
+    const float step=(boost?75.f:25.f)*dt;
     if(freeCam) {
         const Vec3 f=freeDirection(), r=unit(cross(f,{0,1,0}));
-        const Vec3 v=f*(float(held['w'])-held['s'])+r*(float(held['d'])-held['a'])
-                    +Vec3{0,float(held[' '] || held['e'])-held['q'],0};
+        const Vec3 v=f*forward+r*right+Vec3{0,up,0};
         if(length(v)>0) {
-            state.cam.eye=state.cam.eye+unit(v)*((boost?60.f:18.f)*dt);
+            state.cam.eye=state.cam.eye+unit(v)*step;
             state.cam.eye.y=std::max(.5f,state.cam.eye.y); aimFree();
         }
-    }
+    } else if(forward || right || up) move(forward*step,right*step,up*step);
     if(cycle) {
         cycleTime+=dt;
         state.daylight=.5f-.5f*std::cos(cycleTime*(2*pi/20));
@@ -139,12 +143,12 @@ void move(float forward,float right,float vertical) {
 void key(unsigned char c,int,int) {
     const unsigned char k=static_cast<unsigned char>(std::tolower(c));
     if(k=='v') { setFreeCam(!freeCam); title(); glutPostRedisplay(); return; }
+    if(k==' ' || std::strchr("wasdqe",k)) { held[k]=true; return; }
     if(freeCam) {
         if(c==27) { setFreeCam(false); title(); return; }
-        if(k==' ' || std::strchr("wasdqe",k)) { held[k]=true; return; }
-        if((c>='0' && c<='7') || k=='b' || k=='c' || k=='r') setFreeCam(false);
+        if((c>='0' && c<='7') || k=='b' || k=='c' || k=='k' || k=='r') setFreeCam(false);
     }
-    if(k=='a') { activeCar=-1; beginFlight(focus(2)); title(); return; }
+    if(k=='k') { activeCar=-1; beginFlight(focus(2)); title(); return; }
     if(c>='1' && c<='7') { activeCar=-1; beginFlight(focus(c-'0')); title(); return; }
     switch(c) {
         case '0': activeCar=-1; beginFlight(overview()); break;
@@ -169,11 +173,6 @@ void key(unsigned char c,int,int) {
         case 'g': case 'G': state.wire=!state.wire; break;
         case 'j': case 'J': state.ssaa=!state.ssaa; break;
         case 'f': case 'F': state.fog=state.fog>0?0:.85f; break;
-        case 'w': case 'W': move(2,0,0); break;
-        case 's': case 'S': move(-2,0,0); break;
-        case 'd': case 'D': move(0,2,0); break;
-        case 'q': case 'Q': move(0,0,-2); break;
-        case 'e': case 'E': move(0,0,2); break;
         case 'r': case 'R':
             state=View(); state.cam=overview(); cycle=false; flightTime=1; goalDaylight=0; activeCar=-1; break;
         case 27: closing=true; glutLeaveMainLoop(); return;
@@ -329,7 +328,7 @@ int main(int argc,char** argv) {
             std::cout<<"Astana Night 3D\nUsage: astana3d [--shots DIR | --tour DIR] "
                        "[--width W --height H --fps N --first FRAME --last FRAME]\n"
                        "1-7 landmarks, 0 overview, B boulevard, C next car, N day/night, T cycle, G wireframe, "
-                       "J antialiasing, F fog, A Akorda, V free camera, WSD move, Q/E down/up, drag orbit, click pick, "
+                       "J antialiasing, F fog, K Akorda, V free camera, WASD move, Space up, Shift fast, Q/E down/up, drag orbit, click pick, "
                        "wheel zoom, R reset, Esc exit.\n";
             return 0;
         }
@@ -357,7 +356,7 @@ int main(int argc,char** argv) {
         state.cam=overview(); title(); previousMs=glutGet(GLUT_ELAPSED_TIME);
         glutDisplayFunc(display); glutReshapeFunc(resize); glutKeyboardFunc(key);
         glutCloseFunc(closeWindow);
-        glutKeyboardUpFunc(keyUp); glutSpecialFunc(special); glutSpecialUpFunc(specialUp);
+        glutIgnoreKeyRepeat(1); glutKeyboardUpFunc(keyUp); glutSpecialFunc(special); glutSpecialUpFunc(specialUp);
         glutMouseFunc(mouse); glutMotionFunc(motion); glutPassiveMotionFunc(passive); glutMouseWheelFunc(wheel);
         glutTimerFunc(16,timer,0); glutMainLoop();
         // Freeglut may destroy the window before returning from its event loop.
