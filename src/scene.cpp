@@ -1178,7 +1178,7 @@ const std::vector<Landmark>& landmarks() {
     return locations;
 }
 
-std::vector<Vertex> buildScene(std::size_t* cityVertexCount) {
+std::vector<Vertex> buildScene(std::size_t* cityVertexCount, std::size_t* staticVertexCount) {
     Mesh m;
     m.reserve(230000);
     landscape(m);
@@ -1191,6 +1191,8 @@ std::vector<Vertex> buildScene(std::size_t* cityVertexCount) {
     emerald(m);
     if(cityVertexCount) *cityVertexCount=m.size();
     boulevardFleet(m);
+    if(staticVertexCount) *staticVertexCount=m.size();
+    addCar(m,BodyStyle::Fastback,{.86f,.12f,.10f},0,0,1,777);
     return m;
 }
 

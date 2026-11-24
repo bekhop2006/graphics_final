@@ -32,6 +32,7 @@ bool cycle=false, pressed=false, dragged=false, closing=false;
 int lastX=0,lastY=0, downX=0,downY=0,previousMs=0;
 int activeCar=-1;
 float cycleTime=0;
+bool follow=false; // The camera chases the moving car.
 // Free camera: mouse look plus held-key flight through the whole map.
 bool freeCam=false, boost=false, held[256]={};
 float yaw=0, pitch=0;
@@ -40,10 +41,11 @@ int winW=1080, winH=640;
 void title() {
     std::ostringstream s;
     s<<"Astana Night 3D  |  1-7 landmarks   0 overview   B boulevard   C cars   N day/night   "
-      <<"G wire   J AA   F fog   K Akorda   V free cam";
+      <<"G wire   J AA   F fog   K Akorda   V free cam   M moving car";
     if(freeCam) s.str("Astana Night 3D  |  FREE CAM: WASD move   mouse look   Space/E up   Q down   "
                       "Shift fast   click select   V/Esc exit");
     if(activeCar>=0) s<<"  |  "<<carSpots()[activeCar].name;
+    if(follow) s<<"  |  Following the moving car";
     for(const auto& l:landmarks()) if(l.id==state.selected) s<<"  |  "<<l.name;
     glutSetWindowTitle(s.str().c_str());
 }
@@ -66,7 +68,7 @@ void setFreeCam(bool on) {
     freeCam=on; boost=false; pressed=false; std::fill(held,held+256,false);
     glutSetCursor(on?GLUT_CURSOR_NONE:GLUT_CURSOR_INHERIT);
     if(!on) return;
-    flightTime=1; activeCar=-1;
+    flightTime=1; activeCar=-1; follow=false;
     const Vec3 d=unit(state.cam.target-state.cam.eye);
     yaw=std::atan2(d.x,d.z); pitch=std::asin(clamp(d.y,-1,1));
     state.cam.verticalFov=60*pi/180; aimFree();
@@ -79,7 +81,7 @@ void look(int x,int y) {
     aimFree(); glutWarpPointer(cx,cy); glutPostRedisplay();
 }
 void beginFlight(Camera target) {
-    flightFrom=state.cam; flightTo=target; flightTime=0;
+    flightFrom=state.cam; flightTo=target; flightTime=0; follow=false;
 }
 void move(float forward,float right,float vertical);
 void timer(int) {
@@ -87,6 +89,13 @@ void timer(int) {
     const int now=glutGet(GLUT_ELAPSED_TIME);
     const float dt=std::min(.10f,(now-previousMs)/1000.f); previousMs=now;
     state.time+=dt;
+    drive(state);
+    if(follow) {
+        // Aim the flight at the car's current pose, then trail it with a short lag.
+        const Camera chase=chaseView(state);
+        if(flightTime<1) flightTo=chase;
+        else state.cam=blend(state.cam,chase,1-std::exp(-dt*5));
+    }
     if(flightTime<1) {
         flightTime=std::min(1.f,flightTime+dt/1.35f);
         state.cam=fly(flightFrom,flightTo,flightTime);
@@ -120,7 +129,7 @@ float carClearance(Vec3 direction) {
     return std::min(nose,std::min(roof,side))+.20f;
 }
 void orbit(float dx,float dy) {
-    flightTime=1;
+    flightTime=1; follow=false;
     const Vec3 old=state.cam.eye-state.cam.target;
     const float distance=length(old);
     const float yaw=std::atan2(old.x,old.z)-dx*.006f;
@@ -131,7 +140,7 @@ void orbit(float dx,float dy) {
     state.cam.eye.y=std::max(activeCar>=0 ? .27f : 1.1f,state.cam.eye.y);
 }
 void move(float forward,float right,float vertical) {
-    flightTime=1;
+    flightTime=1; follow=false;
     Vec3 dir=state.cam.target-state.cam.eye; dir.y=0;
     dir=unit(dir);
     Vec3 offset=dir*forward+cross(dir,{0,1,0})*right+Vec3{0,vertical,0};
@@ -146,7 +155,7 @@ void key(unsigned char c,int,int) {
     if(k==' ' || std::strchr("wasdqe",k)) { held[k]=true; return; }
     if(freeCam) {
         if(c==27) { setFreeCam(false); title(); return; }
-        if((c>='0' && c<='7') || k=='b' || k=='c' || k=='k' || k=='r') setFreeCam(false);
+        if((c>='0' && c<='7') || k=='b' || k=='c' || k=='k' || k=='m' || k=='r') setFreeCam(false);
     }
     if(k=='k') { activeCar=-1; beginFlight(focus(2)); title(); return; }
     if(c>='1' && c<='7') { activeCar=-1; beginFlight(focus(c-'0')); title(); return; }
@@ -157,6 +166,9 @@ void key(unsigned char c,int,int) {
             activeCar=(activeCar+1)%static_cast<int>(carSpots().size());
             state.selected=0;
             beginFlight(carView(activeCar));
+            break;
+        case 'm': case 'M':
+            activeCar=-1; beginFlight(chaseView(state)); follow=true;
             break;
         case 'n': case 'N': {
             // A stopped cycle can leave the light anywhere between its endpoints.
@@ -174,7 +186,7 @@ void key(unsigned char c,int,int) {
         case 'j': case 'J': state.ssaa=!state.ssaa; break;
         case 'f': case 'F': state.fog=state.fog>0?0:.85f; break;
         case 'r': case 'R':
-            state=View(); state.cam=overview(); cycle=false; flightTime=1; goalDaylight=0; activeCar=-1; break;
+            state=View(); state.cam=overview(); cycle=false; flightTime=1; goalDaylight=0; activeCar=-1; follow=false; break;
         case 27: closing=true; glutLeaveMainLoop(); return;
     }
     title(); glutPostRedisplay();
@@ -204,7 +216,7 @@ void motion(int x,int y) {
 void passive(int x,int y) { if(freeCam) look(x,y); }
 void wheel(int,int direction,int,int) {
     if(freeCam) return;
-    flightTime=1;
+    flightTime=1; follow=false;
     const Vec3 offset=state.cam.eye-state.cam.target;
     const Vec3 lookBack=unit(offset);
     const float minimumDistance=activeCar>=0 ? carClearance(lookBack) : 3.f;
@@ -328,7 +340,7 @@ int main(int argc,char** argv) {
             std::cout<<"Astana Night 3D\nUsage: astana3d [--shots DIR | --tour DIR] "
                        "[--width W --height H --fps N --first FRAME --last FRAME]\n"
                        "1-7 landmarks, 0 overview, B boulevard, C next car, N day/night, T cycle, G wireframe, "
-                       "J antialiasing, F fog, K Akorda, V free camera, WASD move, Space up, Shift fast, Q/E down/up, drag orbit, click pick, "
+                       "J antialiasing, F fog, K Akorda, V free camera, M follow the moving car, WASD move, Space up, Shift fast, Q/E down/up, drag orbit, click pick, "
                        "wheel zoom, R reset, Esc exit.\n";
             return 0;
         }
@@ -345,10 +357,10 @@ int main(int argc,char** argv) {
         if(glewResult!=GLEW_OK) throw std::runtime_error(reinterpret_cast<const char*>(glewGetErrorString(glewResult)));
         while(glGetError()!=GL_NO_ERROR) {} // GLEW can probe a removed core-profile entry.
         if(!GLEW_VERSION_3_3) throw std::runtime_error("OpenGL 3.3 or later is required");
-        std::size_t cityVertices=0;
-        std::vector<Vertex> scene=buildScene(&cityVertices);
+        std::size_t cityVertices=0, staticVertices=0;
+        std::vector<Vertex> scene=buildScene(&cityVertices,&staticVertices);
         const auto vertices=scene.size();
-        renderer.init(scene,cityVertices,!opts.mode.empty()); std::vector<Vertex>().swap(scene);
+        renderer.init(scene,cityVertices,staticVertices,!opts.mode.empty()); std::vector<Vertex>().swap(scene);
         renderer.resize(opts.w,opts.h);
         if(!opts.mode.empty()) {
             capture(opts,vertices); renderer.shutdown(); glutDestroyWindow(window); return 0;

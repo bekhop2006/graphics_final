@@ -41,6 +41,12 @@ inline Mat4 perspective(float fovRadians, float aspect, float nearPlane, float f
     p.m[11]=-1; p.m[14]=2*farPlane*nearPlane/(nearPlane-farPlane);
     return p;
 }
+// Model matrix that turns car-local +X toward a horizontal unit direction and moves it to position.
+inline Mat4 placement(Vec3 position, Vec3 forward) {
+    Mat4 m={{forward.x,0,forward.z,0, 0,1,0,0, -forward.z,0,forward.x,0,
+             position.x,position.y,position.z,1}};
+    return m;
+}
 inline Mat4 lookAt(Camera c, Vec3 upDirection={0,1,0}) {
     const Vec3 f=unit(c.target-c.eye), r=unit(cross(f,upDirection)), u=cross(r,f);
     Mat4 v={{r.x,u.x,-f.x,0, r.y,u.y,-f.y,0, r.z,u.z,-f.z,0,

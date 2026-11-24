@@ -52,13 +52,14 @@ void allocateTarget(GLuint& frame,GLuint& color,GLuint& depth,int w,int h,bool i
 }
 }
 
-void Renderer::init(const std::vector<Vertex>& mesh, std::size_t cityVertices, bool offscreenCapture) {
+void Renderer::init(const std::vector<Vertex>& mesh, std::size_t cityVertices, std::size_t staticVertices, bool offscreenCapture) {
     offscreen=offscreenCapture;
     surface=program(sceneVertex,sceneFragment);
     picking=program(pickVertex,pickFragment);
     sky=program(skyVertex,skyFragment);
     count=static_cast<GLsizei>(mesh.size());
     cityCount=static_cast<GLsizei>(cityVertices);
+    staticCount=static_cast<GLsizei>(staticVertices);
     glGenVertexArrays(1,&meshVAO); glBindVertexArray(meshVAO);
     glGenBuffers(1,&meshVBO); glBindBuffer(GL_ARRAY_BUFFER,meshVBO);
     glBufferData(GL_ARRAY_BUFFER,mesh.size()*sizeof(Vertex),mesh.data(),GL_STATIC_DRAW);
@@ -113,8 +114,17 @@ void Renderer::drawWorld(const View& s, float aspect, float fovY, Vec3 upDirecti
     glUniform1i(glGetUniformLocation(surface,"dayCity"),1);
     glActiveTexture(GL_TEXTURE0);
     if(s.wire) glPolygonMode(GL_FRONT_AND_BACK,GL_LINE);
-    glDrawArrays(GL_TRIANGLES,0,bake ? cityCount : count);
+    drawMesh(surface,s,bake ? cityCount : staticCount);
     glPolygonMode(GL_FRONT_AND_BACK,GL_FILL);
+}
+void Renderer::drawMesh(GLuint prog,const View& s,GLsizei staticEnd) {
+    const GLint model=glGetUniformLocation(prog,"model");
+    const Mat4 identity=placement({0,0,0},{1,0,0}), car=placement(s.carPosition,s.carForward);
+    glUniformMatrix4fv(model,1,GL_FALSE,identity.m);
+    glDrawArrays(GL_TRIANGLES,0,staticEnd);
+    if(staticEnd<staticCount) return; // The reflection bake skips every car.
+    glUniformMatrix4fv(model,1,GL_FALSE,car.m);
+    glDrawArrays(GL_TRIANGLES,staticCount,count-staticCount);
 }
 void Renderer::bakeReflections() {
     // Capture the static city at car height. Six 90-degree views form each cubemap.
@@ -182,7 +192,7 @@ void Renderer::pickPass(const View& s) {
     glEnable(GL_DEPTH_TEST); glPolygonMode(GL_FRONT_AND_BACK,GL_FILL);
     glUseProgram(picking); glBindVertexArray(meshVAO);
     setCamera(picking,s.cam,float(w)/h,s.cam.verticalFov,{0,1,0});
-    glDrawArrays(GL_TRIANGLES,0,count);
+    drawMesh(picking,s,staticCount);
 }
 unsigned int Renderer::pick(const View& s,int x,int y) {
     if(x<0 || y<0 || x>=w || y>=h) return 0;

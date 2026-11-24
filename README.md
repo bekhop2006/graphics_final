@@ -38,6 +38,7 @@ The program requires a graphics driver with an OpenGL 3.3 core context. The GLSL
 | 7 | City Blocks |
 | B | Fly to boulevard level |
 | C | Inspect the fastback, SUV, taxi and compact car in order. Drag to orbit the current car. |
+| M | Follow the red car that drives a loop along both service roads. Drag, zoom, W/A/S/D or any view key stops following. |
 | Left click | Select the visible building. Click the sky or ground to clear the selection. |
 | Left drag / mouse wheel | Orbit around the target / zoom |
 | W, A, S, D / Q, E or Space / Shift | Hold to move forward, left, back, right / down, up / faster |

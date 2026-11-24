@@ -56,6 +56,28 @@ Camera fly(Camera a,Camera b,float progress) {
     c.eye.y+=std::sin(t*pi)*std::min(18.f,length(a.eye-b.eye)*.15f);
     return c;
 }
+void drive(View& s) {
+    // A loop along the centre of both service roads, joined by half circles past the ends.
+    constexpr float half=104, radius=17.4f, speed=11;
+    const float straight=2*half, turn=pi*radius, lap=2*(straight+turn);
+    float d=std::fmod(s.time*speed,lap), angle=0;
+    if(d<straight) { s.carPosition={-half+d,0,-radius}; s.carForward={1,0,0}; }
+    else if((d-=straight)<turn) {
+        angle=-pi/2+d/radius;
+        s.carPosition={half+radius*std::cos(angle),0,radius*std::sin(angle)};
+        s.carForward={-std::sin(angle),0,std::cos(angle)};
+    } else if((d-=turn)<straight) { s.carPosition={half-d,0,radius}; s.carForward={-1,0,0}; }
+    else {
+        angle=pi/2+(d-straight)/radius;
+        s.carPosition={-half+radius*std::cos(angle),0,radius*std::sin(angle)};
+        s.carForward={-std::sin(angle),0,std::cos(angle)};
+    }
+    s.carPosition.y=.015f; // Clear the dashed centre line.
+}
+Camera chaseView(const View& s) {
+    const Vec3 p=s.carPosition, f=s.carForward;
+    return {p-f*5.2f+Vec3{0,1.9f,0},p+f*3.f+Vec3{0,.6f,0},55*pi/180};
+}
 View tourFrame(float t) {
     View s; s.time=t; s.cam=overview();
     if(t<6) {
@@ -76,6 +98,7 @@ View tourFrame(float t) {
         const float orbit=.27f*smooth((t-45.6f)/2.4f);
         s.cam=fly(street(1),carView(0,orbit),(t-44)/1.6f);
     }
+    drive(s);
     return s;
 }
 } // namespace astana

@@ -9,14 +9,16 @@ layout(location=2) in vec3 color;
 layout(location=3) in vec2 facadeUV;
 layout(location=4) in float material;
 layout(location=5) in float building;
-uniform mat4 view, projection;
+uniform mat4 view, projection, model;
 out vec3 worldPosition, surfaceNormal, baseColor;
 out vec2 uv;
 flat out int materialId, objectId;
 void main() {
-    worldPosition=position; surfaceNormal=normal; baseColor=color; uv=facadeUV;
+    // The model matrix is a rotation plus translation, so it also turns the normal.
+    worldPosition=(model*vec4(position,1.0)).xyz; surfaceNormal=mat3(model)*normal;
+    baseColor=color; uv=facadeUV;
     materialId=int(material+0.5); objectId=int(building+0.5);
-    gl_Position=projection*view*vec4(position,1.0);
+    gl_Position=projection*view*vec4(worldPosition,1.0);
 }
 )GLSL";
 
@@ -129,11 +131,11 @@ void main() {
 const char* const pickVertex = R"GLSL(#version 330 core
 layout(location=0) in vec3 position;
 layout(location=5) in float building;
-uniform mat4 view, projection;
+uniform mat4 view, projection, model;
 flat out uint id;
 void main() {
     id=uint(building+0.5);
-    gl_Position=projection*view*vec4(position,1.0);
+    gl_Position=projection*view*model*vec4(position,1.0);
 }
 )GLSL";
 const char* const pickFragment = R"GLSL(#version 330 core
