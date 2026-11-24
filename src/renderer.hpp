@@ -13,11 +13,13 @@ struct View {
     int selected=0;
     bool wire=false, ssaa=true;
     Vec3 carPosition={-104,.015f,-17.4f}, carForward={1,0,0};
+    Vec3 playerPosition={-36,.015f,46}, playerForward={0,0,-1};
 };
 
 class Renderer {
 public:
-    void init(const std::vector<Vertex>& mesh, std::size_t cityVertices, std::size_t staticVertices, bool offscreenCapture);
+    void init(const std::vector<Vertex>& mesh, std::size_t cityVertices, std::size_t staticVertices,
+              std::size_t playerVertices, bool offscreenCapture);
     void resize(int width, int height);
     void render(const View& state);
     unsigned int pick(const View& state, int x, int y);
@@ -29,7 +31,7 @@ public:
     void shutdown();
 private:
     int w=0, h=0, sampleScale=2;
-    GLsizei count=0, cityCount=0, staticCount=0;
+    GLsizei count=0, cityCount=0, staticCount=0, playerStart=0;
     GLuint meshVAO=0, meshVBO=0, skyVAO=0;
     GLuint surface=0, sky=0, picking=0;
     GLuint reflections[2]={0,0};

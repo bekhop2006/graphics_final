@@ -33,6 +33,8 @@ int lastX=0,lastY=0, downX=0,downY=0,previousMs=0;
 int activeCar=-1;
 float cycleTime=0;
 bool follow=false; // The camera chases the moving car.
+bool driving=false; // W/A/S/D drive the blue car and the camera chases it.
+float carSpeed=0, carYaw=0, odometer=0;
 // Free camera: mouse look plus held-key flight through the whole map.
 bool freeCam=false, boost=false, held[256]={};
 float yaw=0, pitch=0;
@@ -41,7 +43,8 @@ int winW=1080, winH=640;
 void title() {
     std::ostringstream s;
     s<<"Astana Night 3D  |  1-7 landmarks   0 overview   B boulevard   C cars   N day/night   "
-      <<"G wire   J AA   F fog   K Akorda   V free cam   M moving car";
+      <<"G wire   J AA   F fog   K Akorda   V free cam   M moving car   P drive";
+    if(driving) s.str("Astana Night 3D  |  DRIVING: W gas   S brake/reverse   A/D steer   Shift faster   P exit");
     if(freeCam) s.str("Astana Night 3D  |  FREE CAM: WASD move   mouse look   Space/E up   Q down   "
                       "Shift fast   click select   V/Esc exit");
     if(activeCar>=0) s<<"  |  "<<carSpots()[activeCar].name;
@@ -59,7 +62,46 @@ void crosshair() {
     glScissor(cx-thick/2,cy-len,thick,2*len); glClear(GL_COLOR_BUFFER_BIT);
     glDisable(GL_SCISSOR_TEST); glClearColor(old[0],old[1],old[2],old[3]);
 }
-void display() { renderer.render(state); if(freeCam) crosshair(); glutSwapBuffers(); }
+// 5x7 glyphs for the driving readout. Each row holds five bits, leftmost pixel first.
+const char* const glyphChars="0123456789.KMH/ ";
+const unsigned char glyphs[][7]={
+    {14,17,19,21,25,17,14},{4,12,4,4,4,4,14},{14,17,1,2,4,8,31},{31,2,4,2,1,17,14},
+    {2,6,10,18,31,2,2},{31,16,30,1,1,17,14},{6,8,16,30,17,17,14},{31,1,2,4,8,8,8},
+    {14,17,17,14,17,17,14},{14,17,17,15,1,2,12},{0,0,0,0,0,12,12},{17,18,20,24,20,18,17},
+    {17,27,21,21,17,17,17},{17,17,17,31,17,17,17},{1,1,2,4,8,16,16},{0,0,0,0,0,0,0}};
+void text(const std::string& s,int x,int top,int px) {
+    for(char ch:s) {
+        const char* at=std::strchr(glyphChars,ch);
+        if(at && *at) for(int row=0;row<7;++row) for(int col=0;col<5;++col)
+            if((glyphs[at-glyphChars][row]>>(4-col))&1) {
+                glScissor(x+col*px,top-(row+1)*px,px,px); glClear(GL_COLOR_BUFFER_BIT);
+            }
+        x+=6*px;
+    }
+}
+void hud() {
+    // Odometer and speedometer in the top-left corner, drawn with scissored clears like the crosshair.
+    // The cars are built at 0.6 scale, so one scene unit is 1/0.6 metres.
+    std::ostringstream odo,speed;
+    odo<<std::fixed<<std::setprecision(2)<<odometer/600<<" KM";
+    speed<<int(std::abs(carSpeed)*6+.5f)<<" KM/H";
+    GLfloat old[4]; glGetFloatv(GL_COLOR_CLEAR_VALUE,old);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER,0); glViewport(0,0,winW,winH);
+    glEnable(GL_SCISSOR_TEST);
+    const int px=std::max(2,winH/180), pad=3*px, line=10*px;
+    const int chars=int(std::max(odo.str().size(),speed.str().size()));
+    glClearColor(.04f,.05f,.09f,1);
+    glScissor(pad,winH-3*pad-17*px,2*pad+chars*6*px-px,2*pad+17*px); glClear(GL_COLOR_BUFFER_BIT);
+    glClearColor(1,.85f,.35f,1); text(odo.str(),2*pad,winH-2*pad,px);
+    glClearColor(.80f,.90f,1,1); text(speed.str(),2*pad,winH-2*pad-line,px);
+    glDisable(GL_SCISSOR_TEST); glClearColor(old[0],old[1],old[2],old[3]);
+}
+void display() {
+    renderer.render(state);
+    if(freeCam) crosshair();
+    if(driving) hud();
+    glutSwapBuffers();
+}
 void resize(int w,int h) { winW=w; winH=h; renderer.resize(w,h); glutPostRedisplay(); }
 Vec3 freeDirection() { return {std::cos(pitch)*std::sin(yaw),std::sin(pitch),std::cos(pitch)*std::cos(yaw)}; }
 void aimFree() { state.cam.target=state.cam.eye+freeDirection()*10; }
@@ -68,7 +110,7 @@ void setFreeCam(bool on) {
     freeCam=on; boost=false; pressed=false; std::fill(held,held+256,false);
     glutSetCursor(on?GLUT_CURSOR_NONE:GLUT_CURSOR_INHERIT);
     if(!on) return;
-    flightTime=1; activeCar=-1; follow=false;
+    flightTime=1; activeCar=-1; follow=false; driving=false;
     const Vec3 d=unit(state.cam.target-state.cam.eye);
     yaw=std::atan2(d.x,d.z); pitch=std::asin(clamp(d.y,-1,1));
     state.cam.verticalFov=60*pi/180; aimFree();
@@ -81,7 +123,20 @@ void look(int x,int y) {
     aimFree(); glutWarpPointer(cx,cy); glutPostRedisplay();
 }
 void beginFlight(Camera target) {
-    flightFrom=state.cam; flightTo=target; flightTime=0; follow=false;
+    flightFrom=state.cam; flightTo=target; flightTime=0; follow=false; driving=false;
+}
+void steer(float dt,float throttle,float turn) {
+    // Gas and brake change the speed, rolling slows it, and steering grows with speed.
+    const float top=boost?30.f:18.f;
+    if(throttle!=0) carSpeed+=throttle*(throttle*carSpeed<0?24.f:9.f)*dt;
+    else carSpeed-=std::copysign(std::min(std::abs(carSpeed),6.f*dt),carSpeed);
+    carSpeed=clamp(carSpeed,-6,top);
+    carYaw+=turn*1.5f*clamp(carSpeed/5,-1,1)*dt;
+    state.playerForward={std::cos(carYaw),0,std::sin(carYaw)};
+    Vec3& p=state.playerPosition;
+    p=p+state.playerForward*(carSpeed*dt);
+    odometer+=std::abs(carSpeed)*dt;
+    p.x=clamp(p.x,-190,190); p.z=clamp(p.z,-190,190);
 }
 void move(float forward,float right,float vertical);
 void timer(int) {
@@ -90,9 +145,14 @@ void timer(int) {
     const float dt=std::min(.10f,(now-previousMs)/1000.f); previousMs=now;
     state.time+=dt;
     drive(state);
-    if(follow) {
+    // Held keys move continuously; macOS does not auto-repeat held letter keys.
+    const float forward=float(held['w'])-held['s'], right=float(held['d'])-held['a'];
+    const float up=float(held[' '] || held['e'])-held['q'];
+    if(driving) steer(dt,forward,right);
+    if(follow || driving) {
         // Aim the flight at the car's current pose, then trail it with a short lag.
-        const Camera chase=chaseView(state);
+        const Camera chase=driving ? chaseView(state.playerPosition,state.playerForward)
+                                   : chaseView(state.carPosition,state.carForward);
         if(flightTime<1) flightTo=chase;
         else state.cam=blend(state.cam,chase,1-std::exp(-dt*5));
     }
@@ -100,9 +160,6 @@ void timer(int) {
         flightTime=std::min(1.f,flightTime+dt/1.35f);
         state.cam=fly(flightFrom,flightTo,flightTime);
     }
-    // Held keys move continuously; macOS does not auto-repeat held letter keys.
-    const float forward=float(held['w'])-held['s'], right=float(held['d'])-held['a'];
-    const float up=float(held[' '] || held['e'])-held['q'];
     const float step=(boost?75.f:25.f)*dt;
     if(freeCam) {
         const Vec3 f=freeDirection(), r=unit(cross(f,{0,1,0}));
@@ -111,7 +168,7 @@ void timer(int) {
             state.cam.eye=state.cam.eye+unit(v)*step;
             state.cam.eye.y=std::max(.5f,state.cam.eye.y); aimFree();
         }
-    } else if(forward || right || up) move(forward*step,right*step,up*step);
+    } else if(!driving && (forward || right || up)) move(forward*step,right*step,up*step);
     if(cycle) {
         cycleTime+=dt;
         state.daylight=.5f-.5f*std::cos(cycleTime*(2*pi/20));
@@ -155,7 +212,7 @@ void key(unsigned char c,int,int) {
     if(k==' ' || std::strchr("wasdqe",k)) { held[k]=true; return; }
     if(freeCam) {
         if(c==27) { setFreeCam(false); title(); return; }
-        if((c>='0' && c<='7') || k=='b' || k=='c' || k=='k' || k=='m' || k=='r') setFreeCam(false);
+        if((c>='0' && c<='7') || k=='b' || k=='c' || k=='k' || k=='m' || k=='p' || k=='r') setFreeCam(false);
     }
     if(k=='k') { activeCar=-1; beginFlight(focus(2)); title(); return; }
     if(c>='1' && c<='7') { activeCar=-1; beginFlight(focus(c-'0')); title(); return; }
@@ -168,7 +225,13 @@ void key(unsigned char c,int,int) {
             beginFlight(carView(activeCar));
             break;
         case 'm': case 'M':
-            activeCar=-1; beginFlight(chaseView(state)); follow=true;
+            activeCar=-1; beginFlight(chaseView(state.carPosition,state.carForward)); follow=true;
+            break;
+        case 'p': case 'P':
+            if(driving) { driving=false; break; }
+            activeCar=-1; state.selected=0;
+            beginFlight(chaseView(state.playerPosition,state.playerForward)); driving=true;
+            carSpeed=0; carYaw=std::atan2(state.playerForward.z,state.playerForward.x);
             break;
         case 'n': case 'N': {
             // A stopped cycle can leave the light anywhere between its endpoints.
@@ -186,7 +249,7 @@ void key(unsigned char c,int,int) {
         case 'j': case 'J': state.ssaa=!state.ssaa; break;
         case 'f': case 'F': state.fog=state.fog>0?0:.85f; break;
         case 'r': case 'R':
-            state=View(); state.cam=overview(); cycle=false; flightTime=1; goalDaylight=0; activeCar=-1; follow=false; break;
+            state=View(); state.cam=overview(); cycle=false; flightTime=1; goalDaylight=0; activeCar=-1; follow=false; driving=false; odometer=0; break;
         case 27: closing=true; glutLeaveMainLoop(); return;
     }
     title(); glutPostRedisplay();
@@ -209,13 +272,13 @@ void mouse(int button,int action,int x,int y) {
 }
 void motion(int x,int y) {
     if(freeCam) { look(x,y); return; }
-    if(!pressed) return;
+    if(!pressed || driving) return; // The chase camera owns the view while driving.
     if(!dragged && std::abs(x-downX)+std::abs(y-downY)<4) return;
     dragged=true; orbit(float(x-lastX),float(y-lastY)); lastX=x; lastY=y; glutPostRedisplay();
 }
 void passive(int x,int y) { if(freeCam) look(x,y); }
 void wheel(int,int direction,int,int) {
-    if(freeCam) return;
+    if(freeCam || driving) return;
     flightTime=1; follow=false;
     const Vec3 offset=state.cam.eye-state.cam.target;
     const Vec3 lookBack=unit(offset);
@@ -340,7 +403,7 @@ int main(int argc,char** argv) {
             std::cout<<"Astana Night 3D\nUsage: astana3d [--shots DIR | --tour DIR] "
                        "[--width W --height H --fps N --first FRAME --last FRAME]\n"
                        "1-7 landmarks, 0 overview, B boulevard, C next car, N day/night, T cycle, G wireframe, "
-                       "J antialiasing, F fog, K Akorda, V free camera, M follow the moving car, WASD move, Space up, Shift fast, Q/E down/up, drag orbit, click pick, "
+                       "J antialiasing, F fog, K Akorda, V free camera, M follow the moving car, P drive the blue car with WASD, WASD move, Space up, Shift fast, Q/E down/up, drag orbit, click pick, "
                        "wheel zoom, R reset, Esc exit.\n";
             return 0;
         }
@@ -357,10 +420,10 @@ int main(int argc,char** argv) {
         if(glewResult!=GLEW_OK) throw std::runtime_error(reinterpret_cast<const char*>(glewGetErrorString(glewResult)));
         while(glGetError()!=GL_NO_ERROR) {} // GLEW can probe a removed core-profile entry.
         if(!GLEW_VERSION_3_3) throw std::runtime_error("OpenGL 3.3 or later is required");
-        std::size_t cityVertices=0, staticVertices=0;
-        std::vector<Vertex> scene=buildScene(&cityVertices,&staticVertices);
+        std::size_t cityVertices=0, staticVertices=0, playerVertices=0;
+        std::vector<Vertex> scene=buildScene(&cityVertices,&staticVertices,&playerVertices);
         const auto vertices=scene.size();
-        renderer.init(scene,cityVertices,staticVertices,!opts.mode.empty()); std::vector<Vertex>().swap(scene);
+        renderer.init(scene,cityVertices,staticVertices,playerVertices,!opts.mode.empty()); std::vector<Vertex>().swap(scene);
         renderer.resize(opts.w,opts.h);
         if(!opts.mode.empty()) {
             capture(opts,vertices); renderer.shutdown(); glutDestroyWindow(window); return 0;

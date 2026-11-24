@@ -52,7 +52,8 @@ void allocateTarget(GLuint& frame,GLuint& color,GLuint& depth,int w,int h,bool i
 }
 }
 
-void Renderer::init(const std::vector<Vertex>& mesh, std::size_t cityVertices, std::size_t staticVertices, bool offscreenCapture) {
+void Renderer::init(const std::vector<Vertex>& mesh, std::size_t cityVertices, std::size_t staticVertices,
+                    std::size_t playerVertices, bool offscreenCapture) {
     offscreen=offscreenCapture;
     surface=program(sceneVertex,sceneFragment);
     picking=program(pickVertex,pickFragment);
@@ -60,6 +61,7 @@ void Renderer::init(const std::vector<Vertex>& mesh, std::size_t cityVertices, s
     count=static_cast<GLsizei>(mesh.size());
     cityCount=static_cast<GLsizei>(cityVertices);
     staticCount=static_cast<GLsizei>(staticVertices);
+    playerStart=static_cast<GLsizei>(playerVertices);
     glGenVertexArrays(1,&meshVAO); glBindVertexArray(meshVAO);
     glGenBuffers(1,&meshVBO); glBindBuffer(GL_ARRAY_BUFFER,meshVBO);
     glBufferData(GL_ARRAY_BUFFER,mesh.size()*sizeof(Vertex),mesh.data(),GL_STATIC_DRAW);
@@ -119,12 +121,15 @@ void Renderer::drawWorld(const View& s, float aspect, float fovY, Vec3 upDirecti
 }
 void Renderer::drawMesh(GLuint prog,const View& s,GLsizei staticEnd) {
     const GLint model=glGetUniformLocation(prog,"model");
-    const Mat4 identity=placement({0,0,0},{1,0,0}), car=placement(s.carPosition,s.carForward);
+    const Mat4 identity=placement({0,0,0},{1,0,0}), car=placement(s.carPosition,s.carForward),
+               player=placement(s.playerPosition,s.playerForward);
     glUniformMatrix4fv(model,1,GL_FALSE,identity.m);
     glDrawArrays(GL_TRIANGLES,0,staticEnd);
     if(staticEnd<staticCount) return; // The reflection bake skips every car.
     glUniformMatrix4fv(model,1,GL_FALSE,car.m);
-    glDrawArrays(GL_TRIANGLES,staticCount,count-staticCount);
+    glDrawArrays(GL_TRIANGLES,staticCount,playerStart-staticCount);
+    glUniformMatrix4fv(model,1,GL_FALSE,player.m);
+    glDrawArrays(GL_TRIANGLES,playerStart,count-playerStart);
 }
 void Renderer::bakeReflections() {
     // Capture the static city at car height. Six 90-degree views form each cubemap.

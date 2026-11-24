@@ -27,7 +27,9 @@ struct CarSpot {
 
 const std::vector<Landmark>& landmarks();
 const std::vector<CarSpot>& carSpots();
-// The moving car follows the static mesh in car-local space; staticVertexCount marks where it starts.
-std::vector<Vertex> buildScene(std::size_t* cityVertexCount=nullptr, std::size_t* staticVertexCount=nullptr);
+// The moving car and then the drivable car follow the static mesh in car-local space.
+// staticVertexCount and playerVertexStart mark where each of them starts.
+std::vector<Vertex> buildScene(std::size_t* cityVertexCount=nullptr, std::size_t* staticVertexCount=nullptr,
+                               std::size_t* playerVertexStart=nullptr);
 
 } // namespace astana

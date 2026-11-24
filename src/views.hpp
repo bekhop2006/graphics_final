@@ -10,6 +10,6 @@ Camera carDetail();
 Camera focus(int id);
 Camera fly(Camera a, Camera b, float progress);
 void drive(View& state);
-Camera chaseView(const View& state);
+Camera chaseView(Vec3 position, Vec3 forward);
 View tourFrame(float seconds);
 }

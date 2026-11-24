@@ -74,8 +74,7 @@ void drive(View& s) {
     }
     s.carPosition.y=.015f; // Clear the dashed centre line.
 }
-Camera chaseView(const View& s) {
-    const Vec3 p=s.carPosition, f=s.carForward;
+Camera chaseView(Vec3 p, Vec3 f) {
     return {p-f*5.2f+Vec3{0,1.9f,0},p+f*3.f+Vec3{0,.6f,0},55*pi/180};
 }
 View tourFrame(float t) {
